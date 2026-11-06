@@ -1,6 +1,6 @@
 name: Sync Docker images to ACR
 
-# 触发：push 到 main 自动跑；也可在 GitHub 网页 Actions 标签点 "Run workflow" 手动触发。
+# 触发：push 到 master 自动跑；也可在 GitHub 网页 Actions 标签点 "Run workflow" 手动触发。
 on:
   push:
     branches: [master]
@@ -26,14 +26,19 @@ jobs:
         run: |
           set -e
 
-          # 1) 后端 JDK25 基础镜像（compose 构建后端镜像时需要）
+          # 1) 后端 JDK25 基础镜像（部署 Dockerfile 的 FROM 指向它来构建 fineract-backend）
           docker pull azul/zulu-openjdk-alpine:25-jre-headless
           docker tag  azul/zulu-openjdk-alpine:25-jre-headless "$REGISTRY/fineract/backend:25-jre-headless"
           docker push "$REGISTRY/fineract/backend:25-jre-headless"
 
-          # 2) 前端 nginx 镜像（compose 直接用作 web 服务运行时）
+          # 2) 前端 nginx 镜像（compose 的 web 服务直接用它作运行时）
           docker pull nginx:1.31-alpine
           docker tag  nginx:1.31-alpine "$REGISTRY/fineract/nginx:1.31-alpine"
           docker push "$REGISTRY/fineract/nginx:1.31-alpine"
+
+          # 3) 数据库镜像（部署 compose 的 postgresql 服务用 postgres:18.3）
+          docker pull postgres:18.3
+          docker tag  postgres:18.3 "$REGISTRY/fineract/postgres:18.3"
+          docker push "$REGISTRY/fineract/postgres:18.3"
 
           echo "=== sync done ==="
