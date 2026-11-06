@@ -13,45 +13,57 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 诊断步骤：只报告格式/连通性，绝不打印 secret 值（GitHub 会自动 mask 成 ***）
+      # 诊断步骤：只报告长度/格式/连通性，绝不打印 secret 值（GitHub 会自动 mask 成 ***）
       - name: Validate secrets (diagnostics)
         env:
           REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
           USERNAME: ${{ secrets.ALIYUN_USERNAME }}
           PASSWORD: ${{ secrets.ALIYUN_PASSWORD }}
         run: |
-          echo "== 1) secrets 是否已配置（只报长度，不报内容） =="
-          [ -n "$REGISTRY" ] && echo "  ALIYUN_REGISTRY : set, length=${#REGISTRY}" || echo "  ALIYUN_REGISTRY : EMPTY"
-          [ -n "$USERNAME" ] && echo "  ALIYUN_USERNAME : set, length=${#USERNAME}" || echo "  ALIYUN_USERNAME : EMPTY"
-          [ -n "$PASSWORD" ] && echo "  ALIYUN_PASSWORD : set, length=${#PASSWORD}" || echo "  ALIYUN_PASSWORD : EMPTY"
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf '%s' "$v"; }
 
-          echo "== 2) REGISTRY 格式校验（应是裸域名，如 registry.cn-hangzhou.aliyuncs.com） =="
+          echo "== 1) secrets 长度（trim 前 -> 后；只报长度，不报内容） =="
+          printf "  ALIYUN_REGISTRY : %s -> %s\n" "${#REGISTRY}" "$(trim "$REGISTRY" | wc -c)"
+          printf "  ALIYUN_USERNAME : %s -> %s\n" "${#USERNAME}" "$(trim "$USERNAME" | wc -c)"
+          printf "  ALIYUN_PASSWORD : %s -> %s\n" "${#PASSWORD}" "$(trim "$PASSWORD" | wc -c)"
+          echo "  (前后不一致 = 粘贴时带入了首尾空格/换行，下面的 login 会自动去掉)"
+
+          REGISTRY=$(trim "$REGISTRY")
+          echo "== 2) REGISTRY 格式校验（应是裸域名） =="
           bad=0
           case "$REGISTRY" in
-            http://*|https://*) echo "  ERROR: 带了 http(s):// 协议头，请去掉"; bad=1 ;;
+            http://*|https://*) echo "  ERROR: 带了 http(s):// 协议头"; bad=1 ;;
           esac
           case "$REGISTRY" in
-            */*) echo "  ERROR: 带了路径/斜杠（如 /fineract），请去掉"; bad=1 ;;
+            */*) echo "  ERROR: 带了路径/斜杠"; bad=1 ;;
           esac
-          [ "$bad" = "0" ] && echo "  OK: 格式看起来是裸域名"
+          [ "$bad" = "0" ] && echo "  OK: 裸域名"
 
           echo "== 3) 连通性探测 =="
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$REGISTRY/v2/" || echo "000")
-          echo "  GET https://<registry>/v2/ -> HTTP $code"
-          echo "  (401 = 地址可达且要求鉴权，属正常；000 = 地址不通/格式错)"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$REGISTRY/v2/")
+          echo "  GET https://<registry>/v2/ -> HTTP $code  (401 属正常：地址可达、要求鉴权)"
 
+      # 手动 login，先 trim 掉 secret 里可能夹带的首尾空白
       - name: Login to Aliyun ACR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ALIYUN_REGISTRY }}
-          username: ${{ secrets.ALIYUN_USERNAME }}
-          password: ${{ secrets.ALIYUN_PASSWORD }}
+        env:
+          REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+          USERNAME: ${{ secrets.ALIYUN_USERNAME }}
+          PASSWORD: ${{ secrets.ALIYUN_PASSWORD }}
+        run: |
+          set -e
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf '%s' "$v"; }
+          REGISTRY=$(trim "$REGISTRY")
+          USERNAME=$(trim "$USERNAME")
+          PASSWORD=$(trim "$PASSWORD")
+          printf '%s' "$PASSWORD" | docker login "$REGISTRY" -u "$USERNAME" --password-stdin
 
       - name: Pull, retag and push to ACR
         env:
           REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
         run: |
           set -e
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf '%s' "$v"; }
+          REGISTRY=$(trim "$REGISTRY")
 
           # 1) 后端 JDK25 基础镜像（部署 Dockerfile 的 FROM 指向它来构建 fineract-backend）
           docker pull azul/zulu-openjdk-alpine:25-jre-headless
