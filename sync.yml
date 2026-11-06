@@ -1,0 +1,39 @@
+name: Sync Docker images to ACR
+
+# 触发：push 到 main 自动跑；也可在 GitHub 网页 Actions 标签点 "Run workflow" 手动触发。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Pull, retag and push to ACR
+        env:
+          REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+        run: |
+          set -e
+
+          # 1) 后端 JDK25 基础镜像（compose 构建后端镜像时需要）
+          docker pull azul/zulu-openjdk-alpine:25-jre-headless
+          docker tag  azul/zulu-openjdk-alpine:25-jre-headless "$REGISTRY/fineract/backend:25-jre-headless"
+          docker push "$REGISTRY/fineract/backend:25-jre-headless"
+
+          # 2) 前端 nginx 镜像（compose 直接用作 web 服务运行时）
+          docker pull nginx:1.31-alpine
+          docker tag  nginx:1.31-alpine "$REGISTRY/fineract/nginx:1.31-alpine"
+          docker push "$REGISTRY/fineract/nginx:1.31-alpine"
+
+          echo "=== sync done ==="
