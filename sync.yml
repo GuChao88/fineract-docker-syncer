@@ -36,9 +36,4 @@ jobs:
           docker tag  nginx:1.31-alpine "$REGISTRY/fineract/nginx:1.31-alpine"
           docker push "$REGISTRY/fineract/nginx:1.31-alpine"
 
-          # 3) 数据库镜像（部署 compose 的 postgresql 服务用 postgres:18.3）
-          docker pull postgres:18.3
-          docker tag  postgres:18.3 "$REGISTRY/fineract/postgres:18.3"
-          docker push "$REGISTRY/fineract/postgres:18.3"
-
           echo "=== sync done ==="
