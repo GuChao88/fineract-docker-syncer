@@ -13,6 +13,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 诊断步骤：只报告格式/连通性，绝不打印 secret 值（GitHub 会自动 mask 成 ***）
+      - name: Validate secrets (diagnostics)
+        env:
+          REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+          USERNAME: ${{ secrets.ALIYUN_USERNAME }}
+          PASSWORD: ${{ secrets.ALIYUN_PASSWORD }}
+        run: |
+          echo "== 1) secrets 是否已配置（只报长度，不报内容） =="
+          [ -n "$REGISTRY" ] && echo "  ALIYUN_REGISTRY : set, length=${#REGISTRY}" || echo "  ALIYUN_REGISTRY : EMPTY"
+          [ -n "$USERNAME" ] && echo "  ALIYUN_USERNAME : set, length=${#USERNAME}" || echo "  ALIYUN_USERNAME : EMPTY"
+          [ -n "$PASSWORD" ] && echo "  ALIYUN_PASSWORD : set, length=${#PASSWORD}" || echo "  ALIYUN_PASSWORD : EMPTY"
+
+          echo "== 2) REGISTRY 格式校验（应是裸域名，如 registry.cn-hangzhou.aliyuncs.com） =="
+          bad=0
+          case "$REGISTRY" in
+            http://*|https://*) echo "  ERROR: 带了 http(s):// 协议头，请去掉"; bad=1 ;;
+          esac
+          case "$REGISTRY" in
+            */*) echo "  ERROR: 带了路径/斜杠（如 /fineract），请去掉"; bad=1 ;;
+          esac
+          [ "$bad" = "0" ] && echo "  OK: 格式看起来是裸域名"
+
+          echo "== 3) 连通性探测 =="
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$REGISTRY/v2/" || echo "000")
+          echo "  GET https://<registry>/v2/ -> HTTP $code"
+          echo "  (401 = 地址可达且要求鉴权，属正常；000 = 地址不通/格式错)"
+
       - name: Login to Aliyun ACR
         uses: docker/login-action@v3
         with:
